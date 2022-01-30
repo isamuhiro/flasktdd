@@ -33,7 +33,7 @@ def hello():
 
 
 @app.get('/product')
-def get_products():
+def all_products():
     products = Product.query.all()
     return jsonify(products_schema.dump(products)), HTTPStatus.OK
 
@@ -51,20 +51,34 @@ def create_product():
 
     response = product_schema.dump(product)
 
-    app.logger.info(f"/product [{response}]]")
+    app.logger.info(f"/product [{response}]] created")
     return response, HTTPStatus.CREATED
 
 
-@app.route('/product/<int:id>')
-def get_product(id):
+@app.get('/product/<int:id>')
+def find_product(id):
     product = Product.query.filter_by(id=id).first()
     if not product:
         app.logger.warning(f'Product {id} was not found. {HTTPStatus.NOT_FOUND}')
         return jsonify(message='Product %s was not found'), HTTPStatus.NOT_FOUND
 
     response = product_schema.dump(product)
-    app.logger.info(f"/product [{response}]]")
+    app.logger.info(f"product [{response}]] found")
     return jsonify(response), HTTPStatus.OK
+
+
+@app.delete('/product/<int:id>')
+def delete_product(id):
+    product = Product.query.filter_by(id=id).first()
+    if not product:
+        app.logger.warning(f'Product {id} was not found. {HTTPStatus.NOT_FOUND}')
+        return jsonify(message='Product %s was not found'), HTTPStatus.NOT_FOUND
+
+    db.session.delete(product)
+    db.session.commit()
+    response = product_schema.dump(product)
+    app.logger.info(f"product [{response}]] deleted")
+    return jsonify(response), HTTPStatus.ACCEPTED
 
 
 if __name__ == '__main__':
