@@ -1,12 +1,30 @@
 from http import HTTPStatus
 from flask import Flask, jsonify, request
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.datastructures import MultiDict
+from flask_marshmallow import Marshmallow
 
-from product.ProductForm import ProductForm
+from product.product_form import ProductForm
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
+db = SQLAlchemy(app)
+ma = Marshmallow(app)
 
-products = [dict(id=1, name='chicken breast', price=20.9),
-            dict(id=2, name='rice 1kg', price=5.9)]
+
+class Product(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    price = db.Column(db.Float, nullable=False)
+
+
+class ProductSchema(ma.Schema):
+    class Meta:
+        fields = ('id', 'name', 'price')
+
+
+product_schema = ProductSchema()
+products_schema = ProductSchema(many=True)
 
 
 @app.route('/')
@@ -16,33 +34,37 @@ def hello():
 
 @app.get('/product')
 def get_products():
-    app.logger.info("'/product [%s]'", products)
-    return jsonify(products), HTTPStatus.OK
+    products = Product.query.all()
+    return jsonify(products_schema.dump(products)), HTTPStatus.OK
 
 
 @app.post('/product')
 def create_product():
-    form = ProductForm(request.form)
+    form = ProductForm(MultiDict(request.json))
+
     if not form.validate():
         return jsonify(form.errors), HTTPStatus.BAD_REQUEST
 
-    id_generator = max([product['id'] for product in products]) + 1
-    product_response = dict(id=id_generator, name=form.name.data, price=form.price.data)
-    products.append(product_response)
+    product = Product(name=form.name.data, price=form.price.data)
+    db.session.add(product)
+    db.session.commit()
 
-    app.logger.info("'/product [%s]'", products)
-    return jsonify(product_response), HTTPStatus.CREATED
+    response = product_schema.dump(product)
+
+    app.logger.info(f"/product [{response}]]")
+    return response, HTTPStatus.CREATED
 
 
 @app.route('/product/<int:id>')
 def get_product(id):
-    if id not in [product['id'] for product in products]:
-        app.logger.warn("'/product [%s]'", products)
-        return 'Product %s was not found', HTTPStatus.NOT_FOUND
+    product = Product.query.filter_by(id=id).first()
+    if not product:
+        app.logger.warning(f'Product {id} was not found. {HTTPStatus.NOT_FOUND}')
+        return jsonify(message='Product %s was not found'), HTTPStatus.NOT_FOUND
 
-    app.logger.info("'/product [%s]'", products)
-    product = next(product for product in products if id == product['id'])
-    return jsonify(product), HTTPStatus.OK
+    response = product_schema.dump(product)
+    app.logger.info(f"/product [{response}]]")
+    return jsonify(response), HTTPStatus.OK
 
 
 if __name__ == '__main__':
